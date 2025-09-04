@@ -1,17 +1,20 @@
-import { signupSchema } from '@/app/lib/validations';
-import { NextResponse } from 'next/server';
-import User from '../../../../../models/User';
-import dbConnect from '@/app/lib/mongodb';
+import { signupSchema } from "@/app/lib/validations";
+import { NextResponse } from "next/server";
+import User from "../../../../../models/User";
+import dbConnect from "@/app/lib/mongodb";
 
 export async function POST(request) {
   try {
     const body = await request.json();
-    
+
     // Validate input
     const validatedFields = signupSchema.safeParse(body);
     if (!validatedFields.success) {
       return NextResponse.json(
-        { error: 'Invalid fields', details: validatedFields.error.flatten().fieldErrors },
+        {
+          error: "Invalid fields",
+          details: validatedFields.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
@@ -24,7 +27,7 @@ export async function POST(request) {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       return NextResponse.json(
-        { error: 'User already exists with this email' },
+        { error: "User already exists with this email" },
         { status: 400 }
       );
     }
@@ -34,18 +37,18 @@ export async function POST(request) {
       name,
       email,
       password,
-      provider: 'credentials',
-      isEmailVerified: true // For simplicity, assuming email is verified
+      provider: "credentials",
+      isEmailVerified: true, // For simplicity, assuming email is verified
     });
 
     return NextResponse.json(
-      { message: 'User created successfully', userId: user._id },
+      { message: "User created successfully", userId: user._id },
       { status: 201 }
     );
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error("Registration error:", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }

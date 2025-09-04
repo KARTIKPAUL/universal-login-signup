@@ -1,9 +1,7 @@
-
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
-import dbConnect from "./mongodb";
 import User from "../../../models/User";
-
+import dbConnect from "./mongodb";
 
 export const authOptions = {
   providers: [
@@ -46,7 +44,7 @@ export const authOptions = {
             email: user.email,
             name: user.name,
             image: user.image,
-            needsPasswordSetup: user.needsPasswordSetup,
+            needsPasswordSetup: user.needsPasswordSetup || false,
           };
         } catch (error) {
           console.error("Auth error:", error);
@@ -64,52 +62,103 @@ export const authOptions = {
           const existingUser = await User.findOne({ email: user.email });
 
           if (existingUser) {
-            // User exists - check if they need password setup
-            if (!existingUser.password && !existingUser.needsPasswordSetup) {
+            console.log("🔍 Existing Google user found:", {
+              email: existingUser.email,
+              hasPassword: !!existingUser.password,
+              currentNeedsPasswordSetup: existingUser.needsPasswordSetup,
+            });
+
+            // CRITICAL FIX: Only update if user actually needs password setup
+            // Don't override existing password setup status
+
+            if (existingUser.password && !existingUser.needsPasswordSetup) {
+              // User already has password and setup is complete - DO NOTHING
+              console.log(
+                "✅ User already has password setup complete, skipping update"
+              );
+              return true;
+            }
+
+            if (!existingUser.password && existingUser.needsPasswordSetup) {
+              // User needs password setup (first time Google login) - UPDATE ONLY NECESSARY FIELDS
+              console.log(
+                "⚠️ User needs password setup, updating image and provider info only"
+              );
               await User.findByIdAndUpdate(existingUser._id, {
-                needsPasswordSetup: true,
+                // DON'T set needsPasswordSetup: true here if it's already true
+                // Only update image and provider info
+                image: user.image || existingUser.image,
                 provider: "google",
                 providerId: account.providerAccountId,
-                image: user.image,
+                updatedAt: new Date(),
               });
+              return true;
             }
+
+            // Edge case: User has password but needsPasswordSetup is still true (shouldn't happen)
+            if (existingUser.password && existingUser.needsPasswordSetup) {
+              console.log(
+                "🔧 Fixing inconsistent state: user has password but needsPasswordSetup is true"
+              );
+              await User.findByIdAndUpdate(existingUser._id, {
+                needsPasswordSetup: false,
+                image: user.image || existingUser.image,
+                provider: "google",
+                providerId: account.providerAccountId,
+                updatedAt: new Date(),
+              });
+              return true;
+            }
+
             return true;
           } else {
             // Create new user with Google login
-            await User.create({
+            console.log("🆕 Creating new Google user");
+            const newUser = await User.create({
               name: user.name,
               email: user.email,
               image: user.image,
               provider: "google",
               providerId: account.providerAccountId,
-              needsPasswordSetup: true,
+              needsPasswordSetup: true, // Only for NEW users
               isEmailVerified: true,
             });
+            console.log("✅ New Google user created:", newUser.email);
             return true;
           }
         } catch (error) {
-          console.error("Google sign in error:", error);
+          console.error("❌ Google sign in error:", error);
           return false;
         }
       }
       return true;
     },
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, account, trigger }) {
       if (user) {
         token.id = user.id;
         token.needsPasswordSetup = user.needsPasswordSetup;
       }
 
-      // Check for password setup status on each request
+      // Always fetch fresh data from database to ensure accuracy
       if (token.email) {
         try {
           await dbConnect();
           const dbUser = await User.findOne({ email: token.email });
           if (dbUser) {
-            token.needsPasswordSetup = dbUser.needsPasswordSetup;
+            const previousSetupStatus = token.needsPasswordSetup;
+            token.needsPasswordSetup = dbUser.needsPasswordSetup || false;
+
+            // Log if status changed
+            if (previousSetupStatus !== token.needsPasswordSetup) {
+              console.log("📄 JWT - Password setup status changed:", {
+                email: token.email,
+                from: previousSetupStatus,
+                to: token.needsPasswordSetup,
+              });
+            }
           }
         } catch (error) {
-          console.error("JWT callback error:", error);
+          console.error("❌ JWT callback error:", error);
         }
       }
 
@@ -118,7 +167,12 @@ export const authOptions = {
     async session({ session, token }) {
       if (token) {
         session.user.id = token.id;
-        session.user.needsPasswordSetup = token.needsPasswordSetup;
+        session.user.needsPasswordSetup = token.needsPasswordSetup || false;
+
+        console.log("🎯 Session created:", {
+          email: session.user.email,
+          needsPasswordSetup: session.user.needsPasswordSetup,
+        });
       }
       return session;
     },
@@ -129,5 +183,13 @@ export const authOptions = {
   },
   session: {
     strategy: "jwt",
+  },
+  events: {
+    async signIn(message) {
+      console.log("🔐 Sign in event:", {
+        email: message.user.email,
+        provider: message.account?.provider,
+      });
+    },
   },
 };

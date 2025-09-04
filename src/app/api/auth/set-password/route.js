@@ -1,30 +1,31 @@
-import { NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth/next';
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
 
-import { authOptions } from '@/app/lib/auth';
-import { setPasswordSchema } from '@/app/lib/validations';
-import User from '../../../../../models/User';
-import dbConnect from '@/app/lib/mongodb';
 
+
+import User from "../../../../../models/User";
+import dbConnect from "@/app/lib/mongodb";
+import { setPasswordSchema } from "@/app/lib/validations";
+import { authOptions } from "@/app/lib/auth";
 
 export async function POST(request) {
   try {
     const session = await getServerSession(authOptions);
-    
+
     if (!session || !session.user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      );
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     const body = await request.json();
-    
+
     // Validate input
     const validatedFields = setPasswordSchema.safeParse(body);
     if (!validatedFields.success) {
       return NextResponse.json(
-        { error: 'Invalid fields', details: validatedFields.error.flatten().fieldErrors },
+        {
+          error: "Invalid fields",
+          details: validatedFields.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
@@ -33,27 +34,36 @@ export async function POST(request) {
 
     await dbConnect();
 
-    // Update user password
+    // Update user password and set needsPasswordSetup to false
     const user = await User.findOne({ email: session.user.email });
     if (!user) {
-      return NextResponse.json(
-        { error: 'User not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // Update password and needsPasswordSetup flag
     user.password = password;
-    user.needsPasswordSetup = false;
+    user.needsPasswordSetup = false; // IMPORTANT: Set this to false
+    user.updatedAt = new Date();
     await user.save();
 
+    console.log(
+      "Password set successfully for user:",
+      user.email,
+      "needsPasswordSetup:",
+      user.needsPasswordSetup
+    );
+
     return NextResponse.json(
-      { message: 'Password set successfully' },
+      {
+        message: "Password set successfully",
+        needsPasswordSetup: false,
+      },
       { status: 200 }
     );
   } catch (error) {
-    console.error('Set password error:', error);
+    console.error("Set password error:", error);
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
