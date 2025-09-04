@@ -144,13 +144,14 @@ export function LoginForm() {
 
         <div className="mt-4 text-center">
           <span className="text-sm text-gray-600">
-            Already have an account?{" "}
+            Don&apos;t have an account?{" "}
           </span>
+
           <a
-            href="/login"
+            href="/signup"
             className="text-sm text-blue-600 hover:text-blue-500 font-medium"
           >
-            Sign in
+            Sign Up
           </a>
         </div>
       </CardContent>
