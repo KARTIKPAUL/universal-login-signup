@@ -177,6 +177,7 @@ export function SignupForm() {
             placeholder="Enter your full name"
             required
             autoComplete="name"
+            className="text-black"
           />
 
           <Input
@@ -189,6 +190,7 @@ export function SignupForm() {
             placeholder="Enter your email address"
             required
             autoComplete="email"
+            className="text-black"
           />
 
           <div>
@@ -202,6 +204,7 @@ export function SignupForm() {
               placeholder="Create a strong password"
               required
               autoComplete="new-password"
+              className="text-black"
             />
             {formData.password && (
               <div className="mt-1 text-xs">
@@ -234,6 +237,7 @@ export function SignupForm() {
             placeholder="Confirm your password"
             required
             autoComplete="new-password"
+            className="text-black"
           />
 
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
