@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import useAuthStore from "../../stores/authStore";
+import useUIStore from "../../stores/uiStore";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Card, CardHeader, CardContent } from "../ui/Card";
@@ -15,12 +16,45 @@ export function SignupForm() {
     confirmPassword: "",
   });
   const [errors, setErrors] = useState({});
-  const [loading, setLoading] = useState(false);
+
   const router = useRouter();
+
+  // Zustand stores
+  const {
+    isLoading,
+    error: authError,
+    isAuthenticated,
+    needsPasswordSetup,
+    registerUser,
+    loginWithGoogle,
+    clearError,
+  } = useAuthStore();
+
+  const { addToast } = useUIStore();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      if (needsPasswordSetup) {
+        router.push("/set-password");
+      } else {
+        router.push("/dashboard");
+      }
+    }
+  }, [isAuthenticated, needsPasswordSetup, router]);
+
+  useEffect(() => {
+    if (authError) {
+      setErrors({ submit: authError });
+      addToast({
+        type: "error",
+        message: authError,
+      });
+    }
+  }, [authError, addToast]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    clearError();
     setErrors({});
 
     // Client-side validation
@@ -55,100 +89,32 @@ export function SignupForm() {
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
-      setLoading(false);
       return;
     }
 
-    try {
-      // Check if user already exists
-      const checkResponse = await fetch("/api/auth/check-user", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: formData.email }),
+    const result = await registerUser({
+      name: formData.name.trim(),
+      email: formData.email.toLowerCase().trim(),
+      password: formData.password,
+    });
+
+    if (result.success) {
+      addToast({
+        type: "success",
+        message: "Registration successful!",
       });
-
-      if (checkResponse.ok) {
-        const checkData = await checkResponse.json();
-        if (checkData.exists) {
-          setErrors({ email: "An account with this email already exists" });
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Register new user
-      const response = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: formData.name.trim(),
-          email: formData.email.toLowerCase().trim(),
-          password: formData.password,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        if (data.details) {
-          // Handle validation errors from server
-          const serverErrors = {};
-          Object.keys(data.details).forEach((key) => {
-            if (data.details[key] && data.details[key].length > 0) {
-              serverErrors[key] = data.details[key][0];
-            }
-          });
-          setErrors(serverErrors);
-        } else {
-          setErrors({ submit: data.error || "Registration failed" });
-        }
-        setLoading(false);
-        return;
-      }
-
-      // Auto sign in after successful registration
-      const signInResult = await signIn("credentials", {
-        email: formData.email,
-        password: formData.password,
-        redirect: false,
-      });
-
-      if (signInResult?.error) {
-        setErrors({
-          submit:
-            "Registration successful, but login failed. Please try logging in manually.",
-        });
-        setTimeout(() => {
-          router.push("/login");
-        }, 2000);
-      } else if (signInResult?.ok) {
-        router.push("/dashboard");
-      }
-    } catch (error) {
-      console.error("Registration error:", error);
-      setErrors({ submit: "An unexpected error occurred. Please try again." });
-    } finally {
-      setLoading(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
-    setLoading(true);
-    try {
-      const result = await signIn("google", {
-        callbackUrl: "/dashboard",
-        redirect: false,
-      });
+    clearError();
+    const result = await loginWithGoogle();
 
-      if (result?.error) {
-        setErrors({ submit: "Google sign in failed. Please try again." });
-        setLoading(false);
-      }
-      // If successful, NextAuth will handle the redirect
-    } catch (error) {
-      console.error("Google sign in error:", error);
-      setErrors({ submit: "Google sign in failed. Please try again." });
-      setLoading(false);
+    if (result.success) {
+      addToast({
+        type: "success",
+        message: "Google login successful!",
+      });
     }
   };
 
@@ -161,9 +127,9 @@ export function SignupForm() {
       setErrors({ ...errors, [name]: "" });
     }
 
-    // Clear submit error when any field changes
-    if (errors.submit) {
-      setErrors({ ...errors, submit: "" });
+    // Clear auth error when any field changes
+    if (authError) {
+      clearError();
     }
   };
 
@@ -211,7 +177,6 @@ export function SignupForm() {
             placeholder="Enter your full name"
             required
             autoComplete="name"
-            className="text-black"
           />
 
           <Input
@@ -224,7 +189,6 @@ export function SignupForm() {
             placeholder="Enter your email address"
             required
             autoComplete="email"
-            className="text-black"
           />
 
           <div>
@@ -238,7 +202,6 @@ export function SignupForm() {
               placeholder="Create a strong password"
               required
               autoComplete="new-password"
-              className="text-black"
             />
             {formData.password && (
               <div className="mt-1 text-xs">
@@ -271,7 +234,6 @@ export function SignupForm() {
             placeholder="Confirm your password"
             required
             autoComplete="new-password"
-            className="text-black"
           />
 
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
@@ -336,11 +298,11 @@ export function SignupForm() {
 
           <Button
             type="submit"
-            loading={loading}
+            loading={isLoading}
             className="w-full"
-            disabled={loading}
+            disabled={isLoading}
           >
-            {loading ? "Creating Account..." : "Create Account"}
+            {isLoading ? "Creating Account..." : "Create Account"}
           </Button>
         </form>
 
@@ -359,8 +321,8 @@ export function SignupForm() {
           <Button
             variant="google"
             onClick={handleGoogleSignIn}
-            loading={loading}
-            disabled={loading}
+            loading={isLoading}
+            disabled={isLoading}
             className="w-full mt-3"
           >
             <svg className="w-4 h-4 mr-2" viewBox="0 0 24 24">
@@ -395,19 +357,6 @@ export function SignupForm() {
           >
             Sign in
           </a>
-        </div>
-
-        <div className="mt-4 text-center">
-          <p className="text-xs text-gray-500">
-            By creating an account, you agree to our{" "}
-            <a href="/terms" className="text-blue-600 hover:text-blue-500">
-              Terms of Service
-            </a>{" "}
-            and{" "}
-            <a href="/privacy" className="text-blue-600 hover:text-blue-500">
-              Privacy Policy
-            </a>
-          </p>
         </div>
       </CardContent>
     </Card>
